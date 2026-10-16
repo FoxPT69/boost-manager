@@ -419,6 +419,7 @@ function carBall(c) {
     c.touchCd = 0.08; c.st.touches++;
     S.lastTouch = c; S.kickoff = false;
     const bs = Math.sqrt(b.vx * b.vx + b.vy * b.vy + b.vz * b.vz);
+    if (bs > 16) c.recoverT = 1;
     if (bs > 14 && b.vz * c.atk > 8) {
       const t = (c.atk * HZ - b.z) / b.vz, ex = b.x + b.vx * t;
       if (Math.abs(ex) < GW * 1.3) c.st.shots++;
@@ -493,10 +494,12 @@ function nearestPad(c, ownOnly) {
   let best = null, bs = 1e9;
   S.pads.forEach(p => {
     if (p.t > 0) return;
+    if (p.claimBy && p.claimBy !== c && p.claimBy.team === c.team && p.claimT > performance.now()) return;
     if (ownOnly && p.z * c.atk > 6) return;
     const s = Math.hypot(p.x - c.p.x, p.z - c.p.z) - (p.big ? 14 : 0);
     if (s < bs) { bs = s; best = p; }
   });
+  if (best) { best.claimBy = c; best.claimT = performance.now() + 1500; }
   return best;
 }
 function interceptPoint(c) {
@@ -550,10 +553,21 @@ function aiCar(c, dt) {
     }
     return;
   }
-  // papeis
+  // ---- gamesense: papeis, rotacao, posicionamento e jogadas ----
   c.roleT -= dt;
+  c.recoverT = Math.max(0, (c.recoverT || 0) - dt);
+  c.demoCd = (c.demoCd || 0) - dt;
   if (c.idx === 0 && S.roleTick) assignRoles(c.team);
-  const role = c.role;
+  let role = c.role;
+  if (threat && role === 'keeper') role = 'attack';
+  const opps = S.cars.filter(o => o.team !== c.team && !o.dead);
+  let oppEta = 99, oppCar = null;
+  opps.forEach(o => { const e = Math.hypot(b.x - o.p.x, b.z - o.p.z) / (o.boost > 10 ? 18 : 13); if (e < oppEta) { oppEta = e; oppCar = o; } });
+  const myEta = dBall / (c.boost > 10 ? 18 : 13);
+  const ballFrac = clamp(b.z * c.atk / HZ, -1, 1);
+  const faceBall = () => { driveTo(c, b.x, b.z, 3, false); };
+  const goPad = (own, spd) => { const p = nearestPad(c, own); if (!p) return false; driveTo(c, p.x, p.z, spd || 17, false); return true; };
+
   if (S.kickoff && role === 'attack') {
     const r = driveTo(c, b.x, b.z, CAR_MAX, true);
     k.boost = c.boost > 0 && Math.abs(r.ang) < 0.35;
@@ -561,17 +575,30 @@ function aiCar(c, dt) {
     if (r.dist < 8.5 && c.sinceJump > 1.5 && grounded) { k.jump = true; c.dodgeAt = 0.1; c.dodgeDir = [1, 0]; }
     return;
   }
-  if (role === 'keeper' && !threat) {
-    if (c.boost < 30) { const p = nearestPad(c, true); if (p) { driveTo(c, p.x, p.z, 17, false); return; } }
-    const tx = clamp(b.x * 0.4, -GW + 2, GW - 2), tz = ownZ * 0.88;
-    const r = driveTo(c, tx, tz, 12, false);
-    if (r.dist < 3) { k.steer = clamp(c.f.x * 0 + (c.f.z * c.atk > 0 ? 0.3 : 0.3), -1, 1); }
+  // ultimo homem: fecha o angulo entre bola e golo, poupa boost
+  if (role === 'keeper') {
+    if (c.boost < 35 && goPad(true, 17)) return;
+    const depth = clamp(Math.abs(b.z - ownZ) / (HZ * 2), 0, 1);
+    const tx = clamp(b.x * (0.25 + 0.3 * depth), -GW + 2.5, GW - 2.5), tz = ownZ + c.atk * (5 + depth * 24);
+    const r = driveTo(c, tx, tz, 13, c.boost > 70 && r_far(c, tx, tz));
+    if (r.dist < 4) faceBall();
     return;
   }
+  // segundo homem: apoio, passe, rebote ou sombra defensiva
   if (role === 'support') {
-    if (c.boost < 40) { const p = nearestPad(c, false); if (p) { driveTo(c, p.x, p.z, 17, false); return; } }
-    if (wallBall && c.boost > 18) {
-      const sx = Math.sign(b.x), wx = sx * (HX - 0.7), wz = clamp(b.z + (c.team === 0 ? 1 : -1) * 4, -HZ + 8, HZ - 8);
+    if (c.demoCd < -3 && c.skill > 0.5 && c.boost > 25 && oppCar && oppCar !== c.target) {
+      const dd = Math.hypot(oppCar.p.x - c.p.x, oppCar.p.z - c.p.z);
+      _t.set(oppCar.p.x - c.p.x, 0, oppCar.p.z - c.p.z);
+      if (dd < 24 && dd > 6 && _t.normalize().dot(c.f) > 0.75 && oppEta < myEta + 0.4 && Math.random() < 0.08) { c.demoCd = 1.6; c.target = oppCar; }
+    }
+    if (c.demoCd > 0 && c.target && !c.target.dead) {
+      const o = c.target;
+      driveTo(c, o.p.x + o.v.x * 0.3, o.p.z + o.v.z * 0.3, CAR_MAX, true);
+      k.boost = c.boost > 0; return;
+    }
+    if (c.recoverT > 0 || c.boost < 30) { if (goPad(false, 17)) return; }
+    if (wallBall && c.boost > 18 && ballFrac > -0.2) {
+      const sx = Math.sign(b.x), wx = sx * (HX - 0.7), wz = clamp(b.z + c.atk * -4, -HZ + 8, HZ - 8);
       const wr = driveTo(c, wx, wz, 19, true);
       if (wr.dist < 5.8 && c.sinceJump > 1.4 && grounded) {
         c.wallDragT = 1.1 + Math.random() * 0.4; c.wallX = sx * (HX - 0.25); c.wallZ = b.z + c.atk * 3.5;
@@ -579,21 +606,45 @@ function aiCar(c, dt) {
       }
       return;
     }
-    const tx = clamp(b.x * 0.6, -26, 26), tz = clamp(b.z - c.atk * 17, -HZ + 10, HZ - 10);
-    const rr = driveTo(c, tx, tz, 14, true);
+    const sideOpp = b.x > 0 ? -1 : 1;
+    let tx, tz;
+    if (ballFrac > 0.2) { tx = sideOpp * 13; tz = b.z - c.atk * (11 + 6 * (1 - ballFrac)); }
+    else { tx = b.x * 0.4; tz = b.z - c.atk * 17; }
+    if ((tz - b.z) * c.atk > -5) tz = b.z - c.atk * 8;
+    tx = clamp(tx, -26, 26); tz = clamp(tz, -HZ + 10, HZ - 10);
+    const rr = driveTo(c, tx, tz, 15, c.boost > 45);
     trySpeedFlip(c, rr, grounded);
+    if (rr.dist < 4) faceBall();
     return;
   }
-  // atacante / defesa urgente
+  // primeiro homem
   const p = threat || interceptPoint(c);
-  let gx = 0, gz = c.atk * HZ;
-  if (threat || (p.z * c.atk < -HZ * 0.45)) { gx = (p.x > 0 ? -1 : 1) * 30; gz = p.z + c.atk * 30; }
+  const attackZ = p.z * c.atk / HZ;
+  const mateBack = S.cars.some(o => o.team === c.team && o !== c && !o.dead && (o.p.z * c.atk) < (c.p.z * c.atk) - 4);
+  // desafio perdido: recua e faz sombra em vez de sobre-comprometer
+  if (!threat && oppEta < myEta - 0.6 && attackZ < 0.15 && dBall > 10 && mateBack) {
+    const tx = clamp(b.x * 0.5, -GW, GW), tz = clamp(b.z - c.atk * 15, -HZ + 6, HZ - 6);
+    const sr = driveTo(c, tx, tz, 17, c.boost > 40);
+    if (sr.dist < 5) faceBall();
+    return;
+  }
+  if (!threat && c.boost < 22 && dBall > 38 && goPad(false, 18)) return;
+  let gx, gz;
+  if (threat || attackZ < -0.45) {
+    const sx = Math.abs(p.x) > 8 ? Math.sign(p.x) : (oppCar && oppCar.p.x > 0 ? -1 : 1);
+    gx = sx * (HX - 2); gz = p.z + c.atk * 45;
+  } else if (attackZ > 0.4 && Math.abs(p.x) > HX - 13) { gx = 0; gz = c.atk * (HZ - 20); }
+  else if (Math.abs(p.x) > HX - 15 && attackZ > -0.35) { gx = Math.sign(p.x) * HX; gz = p.z + c.atk * 28; }
+  else {
+    let gk = null;
+    opps.forEach(o => { if (!gk || o.p.z * c.atk > gk.p.z * c.atk) gk = o; });
+    gx = (gk && gk.p.x > 0 ? -1 : 1) * (GW - 3.5); gz = c.atk * HZ;
+  }
   let dx = gx - p.x, dz = gz - p.z; const dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl;
   const rel = (c.p.x - p.x) * dx + (c.p.z - p.z) * dz;
   const distP = Math.hypot(p.x - c.p.x, p.z - c.p.z);
   // aerea
   if (grounded && p.y > 3.8 && c.boost > 25 && c.skill > 0.62 && distP > 6 && distP < 24 && c.sinceJump > 1.5 && c.p.y < 1) {
-    const tI = Math.max(0.3, p.t);
     const r = driveTo(c, p.x, p.z, 20, true);
     if (distP < 4 + p.y * 2.0 && Math.abs(r.ang) < 0.5) { k.jump = true; c.aer = true; c.aerT = Math.max(0.5, p.t); k.boost = false; }
     return;
@@ -612,19 +663,25 @@ function aiCar(c, dt) {
       k.jump = true; c.st.walldrags++; return;
     }
   }
-  if (dBall3 < 4.6 && b.y - c.p.y < 2.6 && Math.abs(r.ang) < 0.6 && c.v.length() > 6 && c.sinceJump > 1.5 && grounded && Math.random() < 0.15 + 0.3 * c.skill) {
-    k.jump = true; c.dodgeAt = 0.08 + Math.random() * 0.06; c.dodgeDir = [1, 0];
+  const contest = oppCar && Math.hypot(oppCar.p.x - b.x, oppCar.p.z - b.z) < 12;
+  if (dBall3 < 5 && b.y - c.p.y < 2.6 && Math.abs(r.ang) < 0.6 && c.v.length() > 6 && c.sinceJump > 1.5 && grounded && Math.random() < (contest ? 0.5 : 0.15) + 0.3 * c.skill) {
+    k.jump = true; c.dodgeAt = 0.08 + Math.random() * 0.05; c.dodgeDir = [1, 0];
   }
 }
+function r_far(c, tx, tz) { return Math.hypot(tx - c.p.x, tz - c.p.z) > 25; }
 function assignRoles(team) {
   const cs = S.cars.filter(c => c.team === team && !c.dead);
   if (!cs.length) return;
-  const b = S.ball, atk = cs[0].atk;
-  cs.forEach(c => { c.eta = Math.hypot(b.x - c.p.x, b.z - c.p.z) / 18 + ((c.p.z - b.z) * atk > 1 ? 1.4 : 0); });
-  cs.sort((x, y) => x.eta - y.eta);
-  cs[0].role = 'attack';
-  if (cs[1]) cs[1].role = 'support';
-  if (cs[2]) { cs[2].role = 'keeper'; if (cs[1].p.z * atk < cs[2].p.z * atk) { cs[1].role = 'keeper'; cs[2].role = 'support'; } }
+  const b = S.ball, atk = cs[0].atk, size = S.cars.filter(c => c.team === team).length;
+  cs.forEach(c => {
+    let e = Math.hypot(b.x - c.p.x, b.z - c.p.z) / (c.boost > 10 ? 18 : 13) + ((c.p.z - b.z) * atk > 1.5 ? 1.6 : 0) + (c.recoverT > 0 ? 1.5 : 0);
+    if (c.role === 'attack') e -= 0.3;
+    c.eta = e;
+  });
+  const by = [...cs].sort((x, y) => x.eta - y.eta);
+  by[0].role = 'attack';
+  const rest = by.slice(1).sort((x, y) => x.p.z * atk - y.p.z * atk);
+  rest.forEach((c, i) => { c.role = (i === 0 && size >= 3) ? 'keeper' : 'support'; });
 }
 
 /* ---------- Fluxo da partida ---------- */
@@ -804,3 +861,4 @@ function closeMatch3D() {
 }
 window.openMatch3D = openMatch3D; window.closeMatch3D = closeMatch3D;
 })();
+
