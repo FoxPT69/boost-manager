@@ -2398,7 +2398,7 @@
     }
     /* ---- Definições ---- */
     const SETTINGS_KEY="rlm-settings";
-    let settings={master:80,music:35,sfx:70,mute:false,displayMode:"window",resolution:"auto",uiScale:100,reduceMotion:false};
+    let settings={master:80,music:35,sfx:70,mute:false,displayMode:"window",resolution:"auto",    uiScale:100,reduceMotion:false,lang:"pt"};
     try{Object.assign(settings,JSON.parse(localStorage.getItem(SETTINGS_KEY)||"{}"));}catch{}
     const desktopApi=window.rlmDesktop||null;
     let audioCtx=null,musicTimer=null,musicStep=0;
@@ -2451,6 +2451,7 @@
       const modes=[["window","Janela"],["borderless","Ecrã inteiro em janela"],["fullscreen","Ecrã inteiro"]];
       const resolutions=[["auto","Automática"],["1280x720","1280 × 720"],["1366x768","1366 × 768"],["1600x900","1600 × 900"],["1920x1080","1920 × 1080"],["2560x1440","2560 × 1440"]];
       return `<div class="modal-backdrop" data-action="close-settings"></div><div class="modal-card" role="dialog" aria-label="Definições"><div class="card-head"><h2>⚙ Definições</h2><button class="button small" data-action="close-settings">Fechar ✕</button></div>
+        <h3 class="set-title">Idioma</h3><label class="set-row"><span>Idioma</span><select data-set="lang" data-notr>${window.RLMI18N?RLMI18N.optionsHTML(settings.lang):""}</select></label>
         <h3 class="set-title">Áudio</h3>${slider("master","Volume geral")}${slider("music","Música")}${slider("sfx","Efeitos")}<label class="set-row"><span>Silenciar tudo</span><input type="checkbox" data-set="mute" ${settings.mute?"checked":""}></label>
         <h3 class="set-title">Ecrã</h3><label class="set-row"><span>Modo de ecrã</span><select data-set="displayMode">${modes.map(([v,l])=>`<option value="${v}" ${settings.displayMode===v?"selected":""}>${l}</option>`).join("")}</select></label>
         <label class="set-row"><span>Resolução</span><select data-set="resolution">${resolutions.map(([v,l])=>`<option value="${v}" ${settings.resolution===v?"selected":""}>${l}</option>`).join("")}</select></label>
@@ -2483,7 +2484,7 @@
       if(!action) return;
       if(action==="open-settings") openSettings();
       else if(action==="close-settings") closeSettings();
-      else if(action==="settings-reset"){settings={master:80,music:35,sfx:70,mute:false,displayMode:"window",resolution:"auto",uiScale:100,reduceMotion:false};persistSettings();applyDisplay(true);syncMusic();openSettings();}
+      else if(action==="settings-reset"){settings={master:80,music:35,sfx:70,mute:false,displayMode:"window",resolution:"auto",uiScale:100,reduceMotion:false,lang:"pt"};persistSettings();window.RLMI18N?.setLang("pt");applyDisplay(true);syncMusic();openSettings();}
       else if(action==="save-now"){save();toast("Carreira guardada.");}
       else if(action==="goto-menu"){closeSettings();careerStarted=false;menuView="home";render();}
       else if(action==="scout-hire") hireScout(el.dataset.id);
@@ -2510,6 +2511,7 @@
       const t=event.target;
       if(t.matches("[data-set]")&&t.type!=="range"){
         settings[t.dataset.set]=t.type==="checkbox"?t.checked:t.value;
+        if(t.dataset.set==="lang"){persistSettings();window.RLMI18N?.setLang(t.value);return;}
         persistSettings();applyDisplay(true);if(t.dataset.set==="mute")syncMusic();return;
       }
       if(t.matches("[data-lb]")){
@@ -2543,5 +2545,7 @@
     render();
   </script>
   <script src="assets/match3d.js"></script>
+  <script src="assets/i18n.js"></script>
+  <script>if(window.RLMI18N)RLMI18N.setLang(settings.lang||"pt");</script>
 </body>
 </html>

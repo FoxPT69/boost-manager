@@ -1,8 +1,9 @@
 {
-  "version": 1792113515498,
+  "version": 1792113788341,
   "files": {
-    "index.html": "4502ac712ad5c1a2acdc1c50763176f2a4ad494c0e0f458ccb52fa407126a8b7",
+    "index.html": "edac7795f2594c62a43abea472bcec81f6ce5228337c0dbe81624a4f91d1a987",
     "assets/cover.jpg": "06b6843a5063cfc3e084d1049a166edf429eb8ee527126e369fe236a016bae4a",
+    "assets/i18n.js": "151083c46a4c2449a9f9ec12ea53f9c6966132e4600ceacf1636db6f1415a034",
     "assets/icon.png": "f2eed3f244a5f938b44dbbc72abd6cd15a48bdd7732c553487b2201d8f1f6ef9",
     "assets/match3d.js": "eebf70b6b434fcd24ac87300b50471f6796997e9304c3df2b7cdd6717967921a",
     "assets/three.min.js": "8a5f7249903b54d30f79f708699d2fed2d6a1d0741a4cd41377d1f01bb5a2271"
